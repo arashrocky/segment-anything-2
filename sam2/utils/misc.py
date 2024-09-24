@@ -13,6 +13,7 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
+import re
 
 def get_sdpa_settings():
     if torch.cuda.is_available():
@@ -176,7 +177,6 @@ def load_video_frames(
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
-    compute_device=torch.device("cuda"),
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -204,7 +204,14 @@ def load_video_frames(
         for p in os.listdir(jpg_folder)
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
     ]
-    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    # frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    def frame_sort_key(filename):
+        match = re.search(r'-(\d+)\.', filename)
+        if match:
+            return int(match.group(1))
+        return filename
+    frame_names.sort(key=frame_sort_key)
+
     num_frames = len(frame_names)
     if num_frames == 0:
         raise RuntimeError(f"no images found in {jpg_folder}")
@@ -218,8 +225,7 @@ def load_video_frames(
             image_size,
             offload_video_to_cpu,
             img_mean,
-            img_std,
-            compute_device,
+            img_std
         )
         return lazy_images, lazy_images.video_height, lazy_images.video_width
 
@@ -227,9 +233,9 @@ def load_video_frames(
     for n, img_path in enumerate(tqdm(img_paths, desc="frame loading (JPEG)")):
         images[n], video_height, video_width = _load_img_as_tensor(img_path, image_size)
     if not offload_video_to_cpu:
-        images = images.to(compute_device)
-        img_mean = img_mean.to(compute_device)
-        img_std = img_std.to(compute_device)
+        images = images.cuda()
+        img_mean = img_mean.cuda()
+        img_std = img_std.cuda()
     # normalize by mean and std
     images -= img_mean
     images /= img_std
