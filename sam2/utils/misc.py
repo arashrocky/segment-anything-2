@@ -13,6 +13,7 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
+import re
 
 def get_sdpa_settings():
     if torch.cuda.is_available():
@@ -113,7 +114,6 @@ class AsyncVideoFrameLoader:
         offload_video_to_cpu,
         img_mean,
         img_std,
-        compute_device,
     ):
         self.img_paths = img_paths
         self.image_size = image_size
@@ -127,7 +127,7 @@ class AsyncVideoFrameLoader:
         # video_height and video_width be filled when loading the first image
         self.video_height = None
         self.video_width = None
-        self.compute_device = compute_device
+        # self.compute_device = compute_device
 
         # load the first frame to fill video_height and video_width and also
         # to cache it (since it's most likely where the user will click)
@@ -161,7 +161,8 @@ class AsyncVideoFrameLoader:
         img -= self.img_mean
         img /= self.img_std
         if not self.offload_video_to_cpu:
-            img = img.to(self.compute_device, non_blocking=True)
+            # img = img.to(self.compute_device, non_blocking=True)
+            img = img.cuda(non_blocking=True)
         self.images[index] = img
         return img
 
@@ -176,7 +177,6 @@ def load_video_frames(
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
-    compute_device=torch.device("cuda"),
 ):
     """
     Load the video frames from video_path. The frames are resized to image_size as in
@@ -192,7 +192,6 @@ def load_video_frames(
             offload_video_to_cpu=offload_video_to_cpu,
             img_mean=img_mean,
             img_std=img_std,
-            compute_device=compute_device,
         )
     elif is_str and os.path.isdir(video_path):
         return load_video_frames_from_jpg_images(
@@ -202,7 +201,6 @@ def load_video_frames(
             img_mean=img_mean,
             img_std=img_std,
             async_loading_frames=async_loading_frames,
-            compute_device=compute_device,
         )
     else:
         raise NotImplementedError(
@@ -217,7 +215,6 @@ def load_video_frames_from_jpg_images(
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
-    compute_device=torch.device("cuda"),
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -245,7 +242,14 @@ def load_video_frames_from_jpg_images(
         for p in os.listdir(jpg_folder)
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
     ]
-    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    # frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    def frame_sort_key(filename):
+        match = re.search(r'-(\d+)\.', filename)
+        if match:
+            return int(match.group(1))
+        return filename
+    frame_names.sort(key=frame_sort_key)
+
     num_frames = len(frame_names)
     if num_frames == 0:
         raise RuntimeError(f"no images found in {jpg_folder}")
@@ -260,7 +264,6 @@ def load_video_frames_from_jpg_images(
             offload_video_to_cpu,
             img_mean,
             img_std,
-            compute_device,
         )
         return lazy_images, lazy_images.video_height, lazy_images.video_width
 
@@ -268,9 +271,9 @@ def load_video_frames_from_jpg_images(
     for n, img_path in enumerate(tqdm(img_paths, desc="frame loading (JPEG)")):
         images[n], video_height, video_width = _load_img_as_tensor(img_path, image_size)
     if not offload_video_to_cpu:
-        images = images.to(compute_device)
-        img_mean = img_mean.to(compute_device)
-        img_std = img_std.to(compute_device)
+        images = images.cuda()
+        img_mean = img_mean.cuda()
+        img_std = img_std.cuda()
     # normalize by mean and std
     images -= img_mean
     images /= img_std
@@ -283,7 +286,6 @@ def load_video_frames_from_video_file(
     offload_video_to_cpu,
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
-    compute_device=torch.device("cuda"),
 ):
     """Load the video frames from a video file."""
     import decord
@@ -300,9 +302,9 @@ def load_video_frames_from_video_file(
 
     images = torch.stack(images, dim=0).float() / 255.0
     if not offload_video_to_cpu:
-        images = images.to(compute_device)
-        img_mean = img_mean.to(compute_device)
-        img_std = img_std.to(compute_device)
+        images = images.cuda()
+        img_mean = img_mean.cuda()
+        img_std = img_std.cuda()
     # normalize by mean and std
     images -= img_mean
     images /= img_std

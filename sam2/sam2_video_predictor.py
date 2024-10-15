@@ -49,13 +49,12 @@ class SAM2VideoPredictor(SAM2Base):
         async_loading_frames=False,
     ):
         """Initialize an inference state."""
-        compute_device = self.device  # device of the model
+        # compute_device = self.device  # device of the model
         images, video_height, video_width = load_video_frames(
             video_path=video_path,
             image_size=self.image_size,
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
-            compute_device=compute_device,
         )
         inference_state = {}
         inference_state["images"] = images
@@ -71,11 +70,13 @@ class SAM2VideoPredictor(SAM2Base):
         # the original video height and width, used for resizing final output scores
         inference_state["video_height"] = video_height
         inference_state["video_width"] = video_width
-        inference_state["device"] = compute_device
+        # inference_state["device"] = compute_device
+        inference_state["device"] = torch.device("cuda")
         if offload_state_to_cpu:
             inference_state["storage_device"] = torch.device("cpu")
         else:
-            inference_state["storage_device"] = compute_device
+            inference_state["storage_device"] = torch.device("cuda")
+            # inference_state["storage_device"] = compute_device
         # inputs on each frame
         inference_state["point_inputs_per_obj"] = {}
         inference_state["mask_inputs_per_obj"] = {}
